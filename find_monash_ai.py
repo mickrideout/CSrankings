@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Find all Monash University researchers in AI fields from CSRankings data.
-Outputs a comprehensive markdown report including paper titles.
+Outputs a comprehensive markdown report in Logseq-compatible format.
 """
 
 import csv
@@ -324,6 +324,12 @@ def find_monash_ai_researchers(data_dir: str):
             }
             monash_names.add(name)
     
+    # Also check aliases
+    for alias, canonical in aliases.items():
+        if canonical in monash_researchers and alias in faculty:
+            # Merge alias info if needed
+            pass
+    
     # Process publications from generated-author-info.csv
     print("Processing publication statistics...")
     for pub in publications:
@@ -393,18 +399,25 @@ def get_area_display_name(area: str) -> str:
     return area_names.get(area, area)
 
 
-def generate_markdown_report(researchers: dict, ai_areas: dict, institutions: dict, conf_to_area: dict, output_file: str):
-    """Generate a markdown report of AI researchers."""
+def escape_for_logseq(text: str) -> str:
+    """Escape special characters for Logseq."""
+    # Replace square brackets for Logseq links
+    text = text.replace('[[', '[[').replace(']]', ']]')
+    return text
+
+
+def generate_simple_report(researchers: dict, ai_areas: dict, institutions: dict, conf_to_area: dict, output_file: str):
+    """Generate a simple markdown report without HTML tags or collapsible sections."""
     
     with open(output_file, 'w', encoding='utf-8') as f:
+        # Simple markdown header
         f.write("# Monash University AI Researchers\n\n")
-        f.write("This report lists all Monash University researchers in Artificial Intelligence fields ")
-        f.write("based on CSRankings data, including their paper titles from DBLP.\n\n")
+        f.write("Report of Monash University researchers in Artificial Intelligence fields based on CSRankings data, including their paper titles from DBLP.\n\n")
         
         # Summary
+        f.write("## Summary\n\n")
         total_researchers = len(researchers)
         total_papers = sum(len(r['paper_titles']) for r in researchers.values())
-        f.write(f"## Summary\n\n")
         f.write(f"- **Total AI Researchers**: {total_researchers}\n")
         f.write(f"- **Total AI Papers with Titles**: {total_papers}\n")
         f.write(f"- **Data Source**: CSRankings (csrankings.org) + DBLP\n")
@@ -425,40 +438,49 @@ def generate_markdown_report(researchers: dict, ai_areas: dict, institutions: di
         )
         
         # Individual researcher profiles
-        f.write("## Researchers\n\n")
+        f.write("## Researchers (by adjusted publication count)\n\n")
         f.write("Researchers are listed in order of total adjusted publication count.\n\n")
         
         for idx, (name, data) in enumerate(sorted_researchers, 1):
             info = data['info']
             orcid = data['orcid']
             
-            f.write(f"### {idx}. {name}\n\n")
+            # Clean name for display
+            clean_name = name.replace(' 0001', '').replace(' 0002', '').replace(' 0003', '')
             
-            # Basic info table
-            f.write("| Field | Value |\n")
-            f.write("|-------|-------|\n")
-            f.write(f"| **Institution** | {info['affiliation']} |\n")
-            f.write(f"| **Homepage** | {info['homepage'] if info['homepage'] else 'N/A'} |\n")
-            f.write(f"| **Google Scholar** | {f'https://scholar.google.com/citations?user={info['scholar_id']}' if info['scholar_id'] else 'N/A'} |\n")
-            f.write(f"| **ORCID** | {f'https://orcid.org/{orcid}' if orcid else 'N/A'} |\n")
+            # Researcher section
+            f.write(f"### {idx}. {clean_name}\n\n")
+            
+            # Basic info as bullet list
+            f.write(f"- **Full Name**: {name}\n")
+            f.write(f"- **Institution**: {info['affiliation']}\n")
+            if info['homepage']:
+                f.write(f"- **Homepage**: {info['homepage']}\n")
+            if info['scholar_id']:
+                f.write(f"- **Google Scholar**: https://scholar.google.com/citations?user={info['scholar_id']}\n")
+            if orcid:
+                f.write(f"- **ORCID**: https://orcid.org/{orcid}\n")
             
             # Institution details
             inst_name = info['affiliation']
             if inst_name in institutions:
                 inst = institutions[inst_name]
-                f.write(f"| **Region** | {inst['region']} ({inst['country'].upper()}) |\n")
-                f.write(f"| **Institution Homepage** | {inst['homepage']} |\n")
-            f.write("\n")
+                f.write(f"- **Region**: {inst['region']} ({inst['country'].upper()})\n")
             
             # Publication statistics
-            f.write("#### Publication Statistics\n\n")
-            f.write("| Metric | Value |\n")
-            f.write("|--------|-------|\n")
-            f.write(f"| **Total Papers** | {data['total_papers']:.0f} |\n")
-            f.write(f"| **Adjusted Count** | {data['total_adjusted']:.2f} |\n")
-            f.write(f"| **Active Years** | {data['year_range'][0]} - {data['year_range'][1]} |\n")
-            f.write(f"| **AI Areas** | {len(data['ai_areas'])} |\n")
-            f.write(f"| **Papers with Titles Available** | {len(data['paper_titles'])} |\n")
+            f.write(f"- **Total Papers**: {data['total_papers']:.0f}\n")
+            f.write(f"- **Adjusted Count**: {data['total_adjusted']:.2f}\n")
+            f.write(f"- **Active Years**: {data['year_range'][0]} - {data['year_range'][1]}\n")
+            f.write(f"- **AI Areas**: {len(data['ai_areas'])}\n")
+            f.write(f"- **Papers with Titles**: {len(data['paper_titles'])}\n")
+            
+            # Tags for researcher
+            tags = []
+            for area in data['ai_areas']:
+                tags.append(f"#{area}")
+            if tags:
+                f.write(f"- **Tags**: {' '.join(tags)}\n")
+            
             f.write("\n")
             
             # AI Areas breakdown
@@ -475,7 +497,7 @@ def generate_markdown_report(researchers: dict, ai_areas: dict, institutions: di
                 f.write(f"(adjusted: {total_adj:.2f}), {year_range}\n")
             f.write("\n")
             
-            # Paper Titles Section
+            # Paper Titles Section - flat list by year
             f.write("#### Paper Titles\n\n")
             
             if data['paper_titles']:
@@ -486,31 +508,24 @@ def generate_markdown_report(researchers: dict, ai_areas: dict, institutions: di
                 
                 for year in sorted(year_papers.keys(), reverse=True):
                     papers_in_year = year_papers[year]
-                    f.write(f"<details>\n<summary><strong>{year}</strong> ({len(papers_in_year)} papers)</summary>\n\n")
-                    
-                    f.write("| # | Conference | Title | Authors | Pages | Link |\n")
-                    f.write("|---|------------|-------|---------|-------|------|\n")
+                    f.write(f"**{year}** ({len(papers_in_year)} papers):\n\n")
                     
                     for i, paper in enumerate(papers_in_year, 1):
-                        conf = paper['conference']
-                        title = paper['title'].replace('|', '\\|')  # Escape pipe characters
-                        authors = ', '.join(paper['authors'][:3])  # Show first 3 authors
-                        if len(paper['authors']) > 3:
-                            authors += f" et al. ({paper['num_authors']} total)"
-                        pages = paper['pages'] if paper['pages'] else 'N/A'
-                        url = paper['url'] if paper['url'] else ''
-                        link = f"[Link]({url})" if url else 'N/A'
+                        title = paper['title']
+                        # Clean up title
+                        title = title.replace('\n', ' ').replace('\r', ' ')
                         
-                        f.write(f"| {i} | {conf} | {title} | {authors} | {pages} | {link} |\n")
+                        # Only paper title, nothing else
+                        f.write(f"{i}. {title}\n")
                     
-                    f.write("\n</details>\n\n")
+                    f.write("\n")
             else:
-                f.write("*No paper titles available in DBLP data for this researcher.*\n\n")
+                f.write("*No paper titles available in DBLP data for this researcher.*\n")
             
             f.write("---\n\n")
         
         # Appendices
-        f.write("\n## Appendix A: Methodology\n\n")
+        f.write("## Appendix A: Methodology\n\n")
         f.write("This report was generated by:\n\n")
         f.write("1. Loading faculty data from all `csrankings-*.csv` files\n")
         f.write("2. Identifying researchers with 'Monash University' affiliations\n")
@@ -528,8 +543,7 @@ def generate_markdown_report(researchers: dict, ai_areas: dict, institutions: di
         f.write("| `dblp.xml.xz` | DBLP XML database with paper titles, authors, and venues |\n")
         f.write("| `orcid.csv` | ORCID identifier mappings |\n")
         f.write("| `dblp-aliases.csv` | Name alias mappings for author disambiguation |\n")
-        f.write("| `institutions.csv` | Institution metadata (region, country, homepage) |\n")
-        f.write("\n")
+        f.write("| `institutions.csv` | Institution metadata (region, country, homepage) |\n\n")
         
         f.write("## Appendix C: AI Area Definitions\n\n")
         f.write("AI areas are defined in CSRankings as follows:\n\n")
@@ -539,6 +553,7 @@ def generate_markdown_report(researchers: dict, ai_areas: dict, institutions: di
         f.write("\n")
         
         f.write("---\n\n")
+        f.write("**Tags**: #monash-university #ai-research #csrankings #computer-science #australia #academic-research\n\n")
         f.write("*Report generated from CSRankings and DBLP data. Last updated: April 2026*\n")
     
     print(f"\nReport saved to: {output_file}")
@@ -556,7 +571,7 @@ def main():
     
     print("=" * 60)
     print("Monash University AI Researchers Report Generator")
-    print("(with Paper Titles)")
+    print("(Simple Markdown)")
     print("=" * 60)
     print()
     
@@ -566,7 +581,7 @@ def main():
     print(f"\nFound {len(researchers)} Monash AI researchers")
     
     # Generate report
-    generate_markdown_report(researchers, ai_areas, institutions, conf_to_area, output_file)
+    generate_simple_report(researchers, ai_areas, institutions, conf_to_area, output_file)
     
     print(f"\nDone! Report written to: {output_file}")
     print(f"\nTop researchers by adjusted publication count:")
